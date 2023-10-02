@@ -5,7 +5,8 @@ use std::{
 
 use anyhow::{Context, Result};
 use inquire::{required, Text};
-use relative_path::PathExt;
+use path_slash::PathExt;
+use relative_path::PathExt as RelativePathExt;
 
 use crate::{
     cli::{AddArgs, LinkArgs},
@@ -24,7 +25,7 @@ pub fn link(args: &LinkArgs, ctx: &Ctx) -> Result<()> {
     let mut current = 0;
     let total = links.clone().count();
 
-    for (filename, (to_path, from_path)) in links {
+    for (name, (to_path, from_path)) in links {
         current += 1;
 
         let to_path = expand_tilde(to_path).unwrap();
@@ -33,19 +34,20 @@ pub fn link(args: &LinkArgs, ctx: &Ctx) -> Result<()> {
             path::absolute(ctx.dotfiles_path.join(resolved_path))?
         };
 
+        fs::create_dir_all(to_path.parent().unwrap())?;
         let result = util::link(from_path, to_path);
 
         match result {
             Ok(_) => {
                 println!(
                     "[{}/{}] ['{}']['{}'] is linked!",
-                    current, total, args.profile, filename
+                    current, total, args.profile, name
                 );
             }
             Err(err) => {
                 println!(
                     "[{}/{}] ['{}']['{}']: {}",
-                    current, total, args.profile, filename, err
+                    current, total, args.profile, name, err
                 );
             }
         }
@@ -75,7 +77,7 @@ pub fn add(args: &AddArgs, ctx: &mut Ctx) -> Result<()> {
         let path = ctx
             .dotfiles_path
             .join(path.strip_prefix('/').unwrap_or(&path));
-        path::absolute(path)?.join(dot_name)
+        path::absolute(path)?
     };
     let filepath = {
         let resolved_path = expand_tilde(&args.file_path).unwrap();
@@ -83,18 +85,20 @@ pub fn add(args: &AddArgs, ctx: &mut Ctx) -> Result<()> {
     };
     let filename = filepath.file_name().unwrap().to_str().unwrap();
     let filepath = filepath.parent().unwrap().join(filename);
+    let savepath = savepath.join(filename);
 
-    let filepath_str = filepath.to_str().unwrap().to_owned();
+    let filepath_str = filepath.to_slash().unwrap();
     let savepath_str = savepath.relative_to(&ctx.dotfiles_path)?.to_string();
 
-    fs::create_dir_all(savepath.parent().unwrap()).context("create_dir_all")?;
-    fs::rename(&filepath, &savepath).context("rename")?;
-    util::link(&savepath, &filepath).context("link")?;
+    fs::create_dir_all(savepath.parent().unwrap())?;
+    fs::rename(&filepath, &savepath)?;
+    util::link(&savepath, &filepath)?;
 
+    let home_dir = home::home_dir().unwrap().to_slash().unwrap().to_string();
     ctx.add_link(
         &profile,
-        filename,
-        &filepath_str.replace(home::home_dir().unwrap().to_str().unwrap(), "~"),
+        &dot_name,
+        &filepath_str.replace(&home_dir, "~"),
         &savepath_str,
     );
     ctx.save()?;
