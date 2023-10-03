@@ -1,10 +1,8 @@
-use std::{
-    fs,
-    path::{self, Path},
-};
+use std::{fs, path::Path};
 
 use anyhow::{Context, Result};
 use inquire::{required, Text};
+use path_absolutize::Absolutize;
 use path_slash::PathExt;
 use relative_path::PathExt as RelativePathExt;
 
@@ -31,7 +29,10 @@ pub fn link(args: &LinkArgs, ctx: &Ctx) -> Result<()> {
         let to_path = expand_tilde(to_path).unwrap();
         let from_path = {
             let resolved_path = expand_tilde(from_path).unwrap();
-            path::absolute(ctx.dotfiles_path.join(resolved_path))?
+            ctx.dotfiles_path
+                .join(resolved_path)
+                .absolutize()?
+                .to_path_buf()
         };
 
         fs::create_dir_all(to_path.parent().unwrap())?;
@@ -77,11 +78,11 @@ pub fn add(args: &AddArgs, ctx: &mut Ctx) -> Result<()> {
         let path = ctx
             .dotfiles_path
             .join(path.strip_prefix('/').unwrap_or(&path));
-        path::absolute(path)?
+        path.absolutize()?.to_path_buf()
     };
     let filepath = {
         let resolved_path = expand_tilde(&args.file_path).unwrap();
-        path::absolute(resolved_path)?
+        resolved_path.absolutize()?.to_path_buf()
     };
     let filename = filepath.file_name().unwrap().to_str().unwrap();
     let filepath = filepath.parent().unwrap().join(filename);
